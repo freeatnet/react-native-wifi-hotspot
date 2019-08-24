@@ -19,19 +19,24 @@ package info.whitebyte.hotspotmanager;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.ArrayList;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
+import android.os.ResultReceiver;
 import android.provider.Settings;
 import android.util.Log;
+
+import static android.content.Context.CONNECTIVITY_SERVICE;
 
 public class WifiApManager {
     private final WifiManager mWifiManager;
@@ -69,15 +74,60 @@ public class WifiApManager {
      */
     public boolean setWifiApEnabled(WifiConfiguration wifiConfig, boolean enabled) {
         try {
-            if (enabled) { // disable WiFi in any case
-                mWifiManager.setWifiEnabled(false);
-            }
+            Class<ConnectivityManager> connectivityClass = ConnectivityManager.class;
+            ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService
+                    (CONNECTIVITY_SERVICE);
 
-            Method method = mWifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
-            return (Boolean) method.invoke(mWifiManager, wifiConfig, enabled);
+            if (enabled) {
+                // disable WiFi in any case
+                mWifiManager.setWifiEnabled(false);
+
+                Field internalConnectivityManagerField = ConnectivityManager.class.getDeclaredField("mService");
+                internalConnectivityManagerField.setAccessible(true);
+
+                callStartTethering(internalConnectivityManagerField.get(connectivityManager));
+
+                Method method = mWifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
+                return (Boolean) method.invoke(mWifiManager, wifiConfig, enabled);
+            } else {
+                Method stopTetheringMethod = connectivityClass.getDeclaredMethod("stopTethering", int.class);
+                stopTetheringMethod.invoke(connectivityManager, 0);
+                return true;
+            }
         } catch (Exception e) {
             Log.e(this.getClass().toString(), "", e);
             return false;
+        }
+    }
+
+    private void callStartTethering(Object internalConnectivityManager) throws ReflectiveOperationException {
+        Class internalConnectivityManagerClass = Class.forName("android.net.IConnectivityManager");
+
+        ResultReceiver dummyResultReceiver = new ResultReceiver(null);
+
+        try {
+            Method startTetheringMethod = internalConnectivityManagerClass.getDeclaredMethod("startTethering",
+                    int.class,
+                    ResultReceiver.class,
+                    boolean.class);
+
+            startTetheringMethod.invoke(internalConnectivityManager,
+                    0,
+                    dummyResultReceiver,
+                    false);
+        } catch (NoSuchMethodException e) {
+            // Newer devices have "callingPkg" String argument at the end of this method.
+            Method startTetheringMethod = internalConnectivityManagerClass.getDeclaredMethod("startTethering",
+                    int.class,
+                    ResultReceiver.class,
+                    boolean.class,
+                    String.class);
+
+            startTetheringMethod.invoke(internalConnectivityManager,
+                    0,
+                    dummyResultReceiver,
+                    false,
+                    "com.hotspotme");
         }
     }
 
