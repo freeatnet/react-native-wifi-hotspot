@@ -80,7 +80,8 @@ public class WifiApManager {
 
             if (enabled) {
                 // disable WiFi in any case
-                mWifiManager.setWifiEnabled(false);
+                // TODO: Test if device can support wifi & hotspot (like Google Pixel 3 XL)
+                //mWifiManager.setWifiEnabled(false);
 
                 Field internalConnectivityManagerField = ConnectivityManager.class.getDeclaredField("mService");
                 internalConnectivityManagerField.setAccessible(true);
